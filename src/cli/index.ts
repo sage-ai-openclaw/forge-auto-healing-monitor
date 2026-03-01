@@ -421,4 +421,110 @@ notifyCmd
     }
   });
 
+// Dashboard API commands (US4)
+const dashboardCmd = program
+  .command('dashboard')
+  .description('Dashboard API - Health dashboard and monitoring API');
+
+dashboardCmd
+  .command('start')
+  .description('Inicia el servidor del dashboard API')
+  .option('-p, --port <port>', 'Puerto del servidor', '3000')
+  .option('--no-cors', 'Deshabilitar CORS')
+  .option('--no-ws', 'Deshabilitar WebSocket')
+  .option('-i, --interval <ms>', 'Intervalo de actualización en ms', '5000')
+  .action(async (options) => {
+    try {
+      const { DashboardServer } = await import('../api/server');
+      
+      const server = new DashboardServer({
+        port: parseInt(options.port, 10),
+        enableCors: options.cors,
+        enableWebSocket: options.ws,
+        broadcastInterval: parseInt(options.interval, 10),
+      });
+
+      console.log('🚀 Iniciando Dashboard API...\n');
+      await server.start();
+
+      // Handle graceful shutdown
+      process.on('SIGINT', async () => {
+        console.log('\n🛑 Deteniendo servidor...');
+        await server.stop();
+        process.exit(0);
+      });
+
+      process.on('SIGTERM', async () => {
+        console.log('\n🛑 Deteniendo servidor...');
+        await server.stop();
+        process.exit(0);
+      });
+    } catch (err) {
+      console.error('❌ Error:', err);
+      process.exit(1);
+    }
+  });
+
+dashboardCmd
+  .command('status')
+  .description('Verifica el estado del servidor dashboard')
+  .option('-p, --port <port>', 'Puerto del servidor', '3000')
+  .action(async (options) => {
+    try {
+      const port = parseInt(options.port, 10);
+      
+      // Try to fetch from the API
+      const response = await fetch(`http://localhost:${port}/ping`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Dashboard API está corriendo');
+        console.log(`   URL: http://localhost:${port}`);
+        console.log(`   Status: ${data.status}`);
+        console.log(`   Timestamp: ${data.timestamp}`);
+      } else {
+        console.log('❌ Dashboard API no responde correctamente');
+        process.exit(1);
+      }
+    } catch {
+      console.log('❌ Dashboard API no está corriendo');
+      console.log(`   No se pudo conectar a http://localhost:${options.port}`);
+      process.exit(1);
+    }
+  });
+
+dashboardCmd
+  .command('endpoints')
+  .description('Muestra los endpoints disponibles del API')
+  .action(() => {
+    console.log('📡 Endpoints del Dashboard API:\n');
+    console.log('  Health:');
+    console.log('    GET  /api/health          - Estado de salud completo');
+    console.log('    GET  /api/health/summary  - Resumen de salud (rápido)');
+    console.log('');
+    console.log('  Servicios:');
+    console.log('    GET  /api/services              - Lista todos los servicios');
+    console.log('    GET  /api/services/:name        - Estado de un servicio específico');
+    console.log('    POST /api/services/:name/restart - Reiniciar un servicio');
+    console.log('');
+    console.log('  Notificaciones:');
+    console.log('    GET    /api/notifications       - Historial de notificaciones');
+    console.log('    GET    /api/notifications/stats - Estadísticas de notificaciones');
+    console.log('    POST   /api/notifications/test  - Enviar notificación de prueba');
+    console.log('    DELETE /api/notifications/history - Limpiar historial');
+    console.log('');
+    console.log('  Dashboard:');
+    console.log('    GET  /api/dashboard       - Resumen completo del dashboard');
+    console.log('    GET  /api/events          - Server-Sent Events (tiempo real)');
+    console.log('    GET  /ping                - Health check simple');
+    console.log('');
+    console.log('  WebSocket:');
+    console.log('    ws://localhost:3000       - Conexión WebSocket para actualizaciones en vivo');
+    console.log('');
+    console.log('Ejemplo de uso:');
+    console.log('  curl http://localhost:3000/api/health');
+    console.log('  curl http://localhost:3000/api/services');
+    console.log('  curl http://localhost:3000/api/notifications?limit=10');
+  });
+
 program.parse();
