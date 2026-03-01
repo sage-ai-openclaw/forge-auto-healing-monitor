@@ -48,28 +48,239 @@ program
     }
   });
 
+// Legacy init command (redirects to config init)
 program
   .command('init')
-  .description('Inicializa el archivo de configuración')
+  .description('Inicializa el archivo de configuración (legacy, usa "config init")')
   .action(async () => {
     try {
       const configManager = new ConfigManager();
-      await configManager.init();
-      console.log(`✅ Configuración inicializada en: ${configManager.getConfigPath()}`);
+      const exists = await configManager.exists();
+      
+      if (exists) {
+        console.log('ℹ️  El archivo de configuración ya existe');
+        console.log(`   Ruta: ${configManager.getConfigPath()}`);
+      } else {
+        await configManager.init();
+        console.log(`✅ Configuración inicializada en: ${configManager.getConfigPath()}`);
+      }
     } catch (err) {
       console.error('❌ Error:', err);
       process.exit(1);
     }
   });
 
-program
+// Configuration commands (US5)
+const configCmd = program
   .command('config')
-  .description('Muestra la configuración actual')
-  .action(async () => {
+  .description('Gestiona la configuración del sistema');
+
+configCmd
+  .command('show')
+  .description('Muestra la configuración completa')
+  .option('--json', 'Salida en formato JSON', true)
+  .action(async (options) => {
     try {
       const configManager = new ConfigManager();
       const config = await configManager.load();
-      console.log(JSON.stringify(config, null, 2));
+
+      if (options.json) {
+        console.log(JSON.stringify(config, null, 2));
+      }
+    } catch (err) {
+      console.error('❌ Error:', err);
+      process.exit(1);
+    }
+  });
+
+configCmd
+  .command('get <path>')
+  .description('Obtiene un valor de configuración (notación de puntos)')
+  .action(async (path: string) => {
+    try {
+      const configManager = new ConfigManager();
+      await configManager.load();
+
+      const value = configManager.getValue(path);
+
+      if (value === undefined) {
+        console.error(`❌ La ruta "${path}" no existe en la configuración`);
+        process.exit(1);
+      }
+
+      if (typeof value === 'object' && value !== null) {
+        console.log(JSON.stringify(value, null, 2));
+      } else {
+        console.log(String(value));
+      }
+    } catch (err) {
+      console.error('❌ Error:', err);
+      process.exit(1);
+    }
+  });
+
+configCmd
+  .command('set <path> <value>')
+  .description('Establece un valor de configuración')
+  .option('--number', 'Interpretar valor como número')
+  .option('--boolean', 'Interpretar valor como booleano')
+  .option('--json', 'Interpretar valor como JSON')
+  .action(async (path: string, rawValue: string, options: { number?: boolean; boolean?: boolean; json?: boolean }) => {
+    try {
+      const configManager = new ConfigManager();
+      const config = await configManager.load();
+
+      let value: unknown = rawValue;
+
+      // Parse value based on flags
+      if (options.json) {
+        try {
+          value = JSON.parse(rawValue);
+        } catch {
+          // If JSON parsing fails, treat as string
+        }
+      } else if (options.number) {
+        const numValue = Number(rawValue);
+        if (isNaN(numValue)) {
+          console.error('❌ El valor no es un número válido');
+          process.exit(1);
+        }
+        value = numValue;
+      } else if (options.boolean) {
+        value = rawValue.toLowerCase() === 'true' || rawValue === '1';
+      } else {
+        // Auto-detect type
+        if (rawValue.toLowerCase() === 'true') value = true;
+        else if (rawValue.toLowerCase() === 'false') value = false;
+        else if (rawValue !== '' && !isNaN(Number(rawValue))) value = Number(rawValue);
+        else if (rawValue.startsWith('[') || rawValue.startsWith('{')) {
+          try {
+            value = JSON.parse(rawValue);
+          } catch {
+            // Keep as string
+          }
+        }
+      }
+
+      const newConfig = configManager.setValue(path, value, config);
+      
+      // Validate before saving
+      const validation = configManager.validate(newConfig);
+      if (!validation.valid) {
+        console.error('❌ La configuración no es válida:');
+        for (const error of validation.errors) {
+          console.error(`   - ${error.path}: ${error.message}`);
+        }
+        process.exit(1);
+      }
+
+      await configManager.save(newConfig);
+      console.log(`✅ Configuración actualizada: ${path} = ${JSON.stringify(value)}`);
+    } catch (err) {
+      console.error('❌ Error:', err);
+      process.exit(1);
+    }
+  });
+
+configCmd
+  .command('list')
+  .alias('ls')
+  .description('Lista todas las configuraciones en formato plano')
+  .action(async () => {
+    try {
+      const configManager = new ConfigManager();
+      await configManager.load();
+
+      const flatConfig = configManager.getFlatConfig();
+
+      console.log('📋 Configuración actual:\n');
+      for (const [key, value] of Object.entries(flatConfig)) {
+        const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
+        console.log(`  ${key}: ${displayValue}`);
+      }
+    } catch (err) {
+      console.error('❌ Error:', err);
+      process.exit(1);
+    }
+  });
+
+configCmd
+  .command('reset')
+  .description('Restaura la configuración a valores por defecto')
+  .option('--force', 'Confirmar reset sin preguntar', false)
+  .action(async (options) => {
+    try {
+      if (!options.force) {
+        console.log('⚠️  Esto eliminará toda tu configuración actual y la restaurará a valores por defecto.');
+        console.log('   Usa --force para confirmar.');
+        process.exit(1);
+      }
+
+      const configManager = new ConfigManager();
+      await configManager.reset();
+      console.log('✅ Configuración restaurada a valores por defecto');
+    } catch (err) {
+      console.error('❌ Error:', err);
+      process.exit(1);
+    }
+  });
+
+configCmd
+  .command('validate')
+  .description('Valida la configuración actual')
+  .action(async () => {
+    try {
+      const configManager = new ConfigManager();
+      await configManager.load();
+
+      const validation = configManager.validate();
+
+      if (validation.valid) {
+        console.log('✅ La configuración es válida');
+      } else {
+        console.error('❌ La configuración tiene errores:\n');
+        for (const error of validation.errors) {
+          console.error(`   🔴 ${error.path}: ${error.message}`);
+          if (error.value !== undefined) {
+            console.error(`      Valor actual: ${JSON.stringify(error.value)}`);
+          }
+        }
+        process.exit(1);
+      }
+    } catch (err) {
+      console.error('❌ Error:', err);
+      process.exit(1);
+    }
+  });
+
+configCmd
+  .command('path')
+  .description('Muestra la ruta del archivo de configuración')
+  .action(async () => {
+    try {
+      const configManager = new ConfigManager();
+      console.log(configManager.getConfigPath());
+    } catch (err) {
+      console.error('❌ Error:', err);
+      process.exit(1);
+    }
+  });
+
+configCmd
+  .command('init')
+  .description('Inicializa el archivo de configuración con valores por defecto')
+  .action(async () => {
+    try {
+      const configManager = new ConfigManager();
+      const exists = await configManager.exists();
+      
+      if (exists) {
+        console.log('ℹ️  El archivo de configuración ya existe');
+        console.log(`   Ruta: ${configManager.getConfigPath()}`);
+      } else {
+        await configManager.init();
+        console.log(`✅ Configuración inicializada en: ${configManager.getConfigPath()}`);
+      }
     } catch (err) {
       console.error('❌ Error:', err);
       process.exit(1);
@@ -477,7 +688,7 @@ dashboardCmd
       const response = await fetch(`http://localhost:${port}/ping`);
       
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json() as { status: string; timestamp: string };
         console.log('✅ Dashboard API está corriendo');
         console.log(`   URL: http://localhost:${port}`);
         console.log(`   Status: ${data.status}`);

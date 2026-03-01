@@ -85,7 +85,7 @@ router.get('/', async (_req: Request, res: Response) => {
  */
 router.get('/:name', async (req: Request, res: Response) => {
   try {
-    const { name } = req.params;
+    const name = String(req.params.name);
     const configManager = new ConfigManager();
     const config = await configManager.load();
     
@@ -145,7 +145,7 @@ router.get('/:name', async (req: Request, res: Response) => {
  */
 router.post('/:name/restart', async (req: Request, res: Response) => {
   try {
-    const { name } = req.params;
+    const name = String(req.params.name);
     const configManager = new ConfigManager();
     const config = await configManager.load();
     
