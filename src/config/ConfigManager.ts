@@ -2,13 +2,15 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import type { HealthThresholds } from '../health/HealthChecker';
+import type { ServiceType } from '../services/ServiceMonitor';
 
 export interface ServiceConfig {
   name: string;
-  command: string;
-  checkInterval: number;  // seconds
+  type: ServiceType;
   autoRestart: boolean;
   maxRestarts: number;
+  restartWindow: number;  // seconds
+  checkInterval: number;  // seconds
 }
 
 export interface MonitorConfig {
