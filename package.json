@@ -1,0 +1,27 @@
+{
+  "name": "auto-healing-monitor",
+  "version": "1.0.0",
+  "description": "Sistema de monitoreo y auto-reparacion con notificaciones",
+  "main": "dist/index.js",
+  "bin": {
+    "aheal": "dist/cli/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/cli/index.ts",
+    "build": "tsc",
+    "start": "node dist/cli/index.js",
+    "test": "vitest run",
+    "monitor": "npm start -- monitor"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "node-disk-info": "^1.3.0",
+    "systeminformation": "^5.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "tsx": "^4.7.1",
+    "typescript": "^5.3.3",
+    "vitest": "^1.3.1"
+  }
+}
