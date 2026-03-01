@@ -3,6 +3,7 @@ import path from 'path';
 import os from 'os';
 import type { HealthThresholds } from '../health/HealthChecker';
 import type { ServiceType } from '../services/ServiceMonitor';
+import type { NotificationConfig } from '../notifications/types';
 
 export interface ServiceConfig {
   name: string;
@@ -17,6 +18,8 @@ export interface MonitorConfig {
   healthCheckInterval: number;  // seconds
   thresholds: HealthThresholds;
   services: ServiceConfig[];
+  notificationConfig: NotificationConfig;
+  // Legacy notification config for backward compatibility
   notifications: {
     enabled: boolean;
     webhook?: string;
@@ -35,6 +38,37 @@ export const DEFAULT_CONFIG: MonitorConfig = {
     cpuCritical: 85,
   },
   services: [],
+  notificationConfig: {
+    enabled: true,
+    rules: [
+      {
+        severity: ['critical'],
+        types: ['health', 'service', 'system'],
+        channels: ['console', 'file'],
+        enabled: true,
+      },
+      {
+        severity: ['warning'],
+        types: ['health', 'service', 'system'],
+        channels: ['console'],
+        enabled: true,
+      },
+    ],
+    channels: {
+      console: true,
+      file: {
+        path: '~/.aheal/notifications.log',
+        maxSize: 10 * 1024 * 1024,
+        maxFiles: 5,
+      },
+    },
+    rateLimit: {
+      enabled: true,
+      windowMs: 5 * 60 * 1000,
+      maxPerWindow: 1,
+    },
+    deduplicationWindowMs: 60 * 1000,
+  },
   notifications: {
     enabled: false,
   },

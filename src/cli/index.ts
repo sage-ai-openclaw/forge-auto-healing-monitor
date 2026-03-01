@@ -4,6 +4,7 @@ import { Command } from 'commander';
 import { HealthChecker } from '../health/HealthChecker';
 import { ConfigManager, type ServiceConfig } from '../config/ConfigManager';
 import { ServiceMonitor, serviceMonitor, type ServiceType } from '../services/ServiceMonitor';
+import { NotificationService, notificationService } from '../notifications/NotificationService';
 
 const program = new Command();
 
@@ -267,6 +268,153 @@ serviceCmd
           console.log(`     ${status} ${attempt.timestamp.toISOString()}`);
         }
       }
+    } catch (err) {
+      console.error('❌ Error:', err);
+      process.exit(1);
+    }
+  });
+
+// Notification commands (US3)
+const notifyCmd = program
+  .command('notify')
+  .description('Gestiona notificaciones y alertas');
+
+notifyCmd
+  .command('test')
+  .description('Prueba los canales de notificación configurados')
+  .option('--webhook <url>', 'URL de webhook para prueba (opcional)')
+  .action(async (options) => {
+    try {
+      const configManager = new ConfigManager();
+      const config = await configManager.load();
+
+      // Create notification service with config
+      const notifier = new NotificationService(config.notificationConfig);
+
+      // If webhook URL provided via CLI, temporarily override
+      if (options.webhook) {
+        notifier.updateConfig({
+          channels: {
+            ...config.notificationConfig.channels,
+            webhook: { url: options.webhook, method: 'POST' },
+          },
+        });
+      }
+
+      console.log('🧪 Probando canales de notificación...\n');
+
+      const results = await notifier.testChannels();
+
+      console.log('\n📊 Resultados de prueba:\n');
+      for (const [channel, result] of Object.entries(results)) {
+        const icon = result.success ? '✅' : '❌';
+        console.log(`${icon} ${channel.toUpperCase()}`);
+        if (result.error) {
+          console.log(`   Error: ${result.error}`);
+        }
+      }
+
+      const allSuccess = Object.values(results).every(r => r.success);
+      if (!allSuccess) {
+        console.log('\n⚠️  Algunos canales fallaron. Revisa la configuración.');
+        process.exit(1);
+      } else {
+        console.log('\n✅ Todos los canales funcionan correctamente');
+      }
+    } catch (err) {
+      console.error('❌ Error:', err);
+      process.exit(1);
+    }
+  });
+
+notifyCmd
+  .command('send')
+  .description('Envía una notificación de prueba manual')
+  .option('-t, --title <title>', 'Título de la notificación', 'Notificación de prueba')
+  .option('-m, --message <message>', 'Mensaje de la notificación', 'Esto es una prueba del sistema de notificaciones')
+  .option('-s, --severity <severity>', 'Severidad (info|warning|critical)', 'info')
+  .action(async (options) => {
+    try {
+      const configManager = new ConfigManager();
+      const config = await configManager.load();
+
+      const notifier = new NotificationService(config.notificationConfig);
+
+      console.log('📤 Enviando notificación de prueba...\n');
+
+      const result = await notifier.notify({
+        type: 'system',
+        severity: options.severity as 'info' | 'warning' | 'critical',
+        title: options.title,
+        message: options.message,
+      });
+
+      if (result.sentSuccessfully) {
+        console.log('\n✅ Notificación enviada correctamente');
+        console.log(`   Canales: ${result.channels.join(', ')}`);
+      } else {
+        console.log('\n⚠️  La notificación no se envió (posiblemente limitada por rate limit o duplicada)');
+      }
+    } catch (err) {
+      console.error('❌ Error:', err);
+      process.exit(1);
+    }
+  });
+
+notifyCmd
+  .command('history')
+  .description('Muestra el historial de notificaciones')
+  .option('-l, --limit <n>', 'Número máximo de entradas', '20')
+  .option('--minutes <m>', 'Mostrar notificaciones de los últimos M minutos')
+  .action(async (options) => {
+    try {
+      const configManager = new ConfigManager();
+      const config = await configManager.load();
+
+      const notifier = new NotificationService(config.notificationConfig);
+
+      let history;
+      if (options.minutes) {
+        history = notifier.getRecent(parseInt(options.minutes, 10));
+      } else {
+        history = notifier.getHistory(parseInt(options.limit, 10));
+      }
+
+      if (history.length === 0) {
+        console.log('ℹ️  No hay notificaciones en el historial');
+        return;
+      }
+
+      console.log(`📜 Historial de notificaciones (${history.length} entradas):\n`);
+
+      for (const entry of history) {
+        const icon = entry.sentSuccessfully ? '✅' : '⏸️';
+        const severityIcon = entry.severity === 'critical' ? '🔴' : entry.severity === 'warning' ? '🟡' : '🔵';
+        console.log(`${icon} ${severityIcon} [${entry.severity.toUpperCase()}] ${entry.title}`);
+        console.log(`   Tipo: ${entry.type} | Canales: ${entry.channels.join(', ') || 'ninguno'}`);
+        console.log(`   ${entry.message}`);
+        console.log(`   ${entry.timestamp.toISOString()}`);
+        if (entry.errors) {
+          console.log(`   Errores: ${JSON.stringify(entry.errors)}`);
+        }
+        console.log('');
+      }
+    } catch (err) {
+      console.error('❌ Error:', err);
+      process.exit(1);
+    }
+  });
+
+notifyCmd
+  .command('config')
+  .description('Muestra la configuración de notificaciones')
+  .action(async () => {
+    try {
+      const configManager = new ConfigManager();
+      const config = await configManager.load();
+
+      console.log('🔧 Configuración de notificaciones:\n');
+      console.log(JSON.stringify(config.notificationConfig, null, 2));
     } catch (err) {
       console.error('❌ Error:', err);
       process.exit(1);
